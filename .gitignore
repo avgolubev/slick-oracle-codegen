@@ -1,2 +1,12 @@
-*.class
+/.idea/
+*~
+target/
 *.log
+*.class
+*.iml
+/\.target/
+/\.cache
+/\.project
+/\.classpath
+/.settings/org.scala-ide.sdt.core.prefs
+
