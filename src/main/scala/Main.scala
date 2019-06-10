@@ -8,7 +8,7 @@ import slick.jdbc.meta.MTable
 
 import scala.concurrent.{Await, ExecutionContext}
 import scala.concurrent.duration.Duration
-import oracle.jdbc.OracleDriver
+//import oracle.jdbc.OracleDriver
 
 
 
@@ -243,22 +243,22 @@ case class DB(jdbcUrl: String, userName: String, pass: String) {
 
 
 
-object Example extends App {
-  val outputDir = "slick" // place generated files in sbt's managed sources folder
-  //val url = "jdbc:oracle:thin:oas/oas@//msk-test-01:1521/prod"
-  val jdbcUrl = "jdbc:oracle:thin:@//msk-test-01:1521/prod"  
+object Main extends App {
+  val outputDir = "slick" // place generated files in sbt's managed sources folder   
+  val jdbcUrl = "jdbc:oracle:thin:@//msk-test-01:1521/prod"
+  //val jdbcUrl = "jdbc:oracle:thin:@//db5.poidem.ru:1521/prod"
   val jdbcDriver = "oracle.jdbc.OracleDriver"
   val slickDriver = "slick.jdbc.OracleProfile"
   val pkg = "demo"  
   val schema = "OAS"
   val userName = "test_dev"  
-  val pass = "test_dev"  
+  val pass = "test_dev"
   
   import NewSourceCodeGenerator._
   
   //run(slickDriver, jdbcDriver, url, outputDir, pkg, schema)
   //run(slickDriver, jdbcDriver, url, outputDir, pkg, Option(name), Option(pass))
-  val model = OracleModel.buildModel(jdbcUrl, userName, pass, Seq("OAS"), Seq.empty)
+  val model = OracleModel.buildModel(jdbcUrl, userName, pass, Seq("OAS"), Seq("ACCOUNT_LIMIT_PC"))
       
   new SourceCodeGenerator(model).writeToFile(slickDriver, outputDir, pkg)
 }
