@@ -1,6 +1,6 @@
 import Dependencies._
 
-val slickVersion = "3.2.3"
+val slickVersion = "3.3.1"
 
 lazy val root = (project in file(".")).
   settings(
@@ -11,7 +11,7 @@ lazy val root = (project in file(".")).
     )),
     name := "slick-oracle-codegen",
     resolvers += "OAM 11g" at "https://maven.oracle.com",
-    credentials += Credentials("OAM 11g", "login.oracle.com", "email", "pass"),
+    credentials += Credentials("OAM 11g", "login.oracle.com", "andrei.v.g@icloud.com", "_statUs44"),
     libraryDependencies ++= Seq(
         "com.typesafe.slick" %% "slick" % slickVersion
       , "org.slf4j" % "slf4j-nop" % "1.6.4"

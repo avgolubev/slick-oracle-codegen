@@ -72,149 +72,43 @@ object OracleModel {
   import anorm._
   import anorm.SqlParser._
   import scala.collection.mutable
-  
-  def tpe(dataType: String, dataLength: Int) = dataType match {
-    case "CHAR" | "VARCHAR" | "VARCHAR2" if dataLength == 1 => "Char"
-    case "CHAR" | "VARCHAR" | "VARCHAR2" => "String"
-    case "NUMBER" | "INTEGER" => "scala.math.BigDecimal"
-    case "DATE" => "java.sql.Timestamp"
-    case _ => "Any"  
-  }
-  
-  def buildModel(jdbcUrl: String, userName: String, pass: String, schemaSeq: Seq[String], tableSeq: Seq[String]): Model = {
+  import scala.collection.immutable
+    
+  def buildModel(jdbcUrl: String, userName: String, pass: String, schemaNames: Seq[String], tableNames: Seq[String]): Model = {
     
     val db = DB(jdbcUrl, userName, pass)
-    val parser1 = str("owner") ~ str("table_name") map ( flatten ) *
-    val parser2 = str("column_name") ~ str("data_type") ~ int("data_length") ~ str("nullable") map ( flatten ) *
-    val parser3 = str("constraint_name") ~ str("column_name") map ( flatten ) *
-    val parser4 = str("constraint_name") ~ str(".delete_rule") ~ str("column_name") map ( flatten ) *
-    val parser5 = str("r_owner") ~ str("table_name") ~ str("constraint_name") ~ str("column_name") map ( flatten ) *
-
-    var tables: Seq[Table] = Seq.empty
-
+        
+    var resultTables = Seq.empty[Table]
+    var intermediateResultTables = Seq.empty[Table]
+        
     db.withConnection { implicit connection =>
       
-      val ownersTables: List[(String, String)] = (schemaSeq, tableSeq) match {
-        case (Seq(), Seq()) =>
-          SQL(""" SELECT owner, table_name FROM all_tables """).as(parser1)
-          
-        case (Seq(), _) =>
-          SQL("""
-              SELECT owner, table_name FROM all_tables 
-                where table_name in ({tableNames})
-          """).on("tableNames" -> tableSeq).as(parser1)
-          
-        case (_, Seq()) =>
-          SQL("""
-              SELECT owner, table_name FROM all_tables 
-                where owner in ({owners})
-          """).on("owners" -> schemaSeq).as(parser1)
-          
-        case (_, _) =>
-          SQL("""
-              SELECT owner, table_name FROM all_tables 
-                where owner in ({owners}) and table_name in ({tableNames})
-          """).on("owners" -> schemaSeq, "tableNames" -> tableSeq).as(parser1)          
-      }  
+      var qualifiedNames = ModelBuildSteps.buildSchemaTableNames(schemaNames, tableNames)  
       
-        
-      for(ownerTable <- ownersTables) {
-        
-        var qualifiedName = QualifiedName(ownerTable._2, Some(ownerTable._1))
-        
-        var columns = SQL("""
-          select column_name, data_type, data_length, nullable 
-            from all_tab_columns 
-              where owner = {owner} and table_name = {tableName}""")
-        .on("owner" -> ownerTable._1, "tableName" -> ownerTable._2).as(parser2)        
-        .map { column =>          
-          slick.model.Column(column._1, qualifiedName, tpe(column._2, column._3), column._4 == "Y") 
-        }
-
-        var sqlPrimaryKey = SQL("""
-          select c1.constraint_name, c2.column_name 
-            from  all_constraints c1 
-              inner join all_cons_columns c2 on c1.constraint_name = c2.constraint_name 
-              and c2.owner = c1.owner 
-              and c2.table_name = c1.table_name 
-              and c2.constraint_name = c1.constraint_name
-            where c1.constraint_type = 'P' and c1.owner = {owner} and c1.table_name = {tableName}          
-          """).on("owner" -> ownerTable._1, "tableName" -> ownerTable._2).as(parser3)
-          
-        var primaryKey = 
-          if(sqlPrimaryKey.isEmpty) None 
-          else {            
-            val columnsPerKey = columns.filter(c => sqlPrimaryKey.exists(_._2 == c.name ) )
-            if(columnsPerKey.isEmpty) None
-            else Some( PrimaryKey(Some(sqlPrimaryKey(0)._1), qualifiedName, columnsPerKey) )
-          }  
-          
-          tables.:+= (Table(qualifiedName, columns, primaryKey, Seq.empty, Seq.empty))
-/*          
-       
-        case class Table(
-          name: QualifiedName,
-          columns: Seq[Column],
-          primaryKey: Option[PrimaryKey],
-          foreignKeys: Seq[ForeignKey],
-          indices: Seq[Index],
-          options: Set[TableOption[_]] = Set()
-        )
-        * /        
-        */
-      }
-      
-      tables map { table =>
-        val foreignMap = SQL("""
-            select c1.constraint_name, c1.delete_rule, c2.column_name
-              from  all_constraints c1 
-                inner join all_cons_columns c2 on c1.constraint_name = c2.constraint_name 
-                and c2.owner = c1.owner 
-                and c2.table_name = c1.table_name 
-                and c2.constraint_name = c1.constraint_name
-              where c1.constraint_type = 'R' and c1.owner = {owner} and c1.table_name = {tableName}
-              order by c1.constraint_name
-        """).on("owner" -> table.name.schema, "tableName" -> table.name.table).as(parser4).groupBy(_._1)
-        
-        val foreignKeys = mutable.Buffer.empty[ForeignKey]
-        for(f <- foreignMap) {
-          val r_foreignMap = SQL("""          
-            select c1.r_owner, c2.table_name, c2.constraint_name, c2.column_name
-            from  all_constraints c1 
-              inner join all_cons_columns c2 on c2.owner = c1.r_owner 
-              and c2.constraint_name = c1.r_constraint_name
-            where c1.owner = {owner} and c1.constraint_name = {constraintName}  
-          """).on("owner" -> table.name.schema, "constraintName" -> f._1).as(parser5).groupBy(_._1)            
-                 
-          val referencingTable = table.name
-          val referencingColumns = table.columns.filter(c => f._2.exists(t => c.name == t._3))
-          val referencedTable = tables.find(t => r_foreignMap.exists(r_f => r_f._1 == t.name.schema && r_f._2.exists(s => s._2 == t.name.table)) )
-                                      .map(t => t.name).get // или выбрать в базе
-          val referencedColumns = tables.find(t => r_foreignMap.exists(r_f => r_f._1 == t.name.schema && r_f._2.exists(s => s._2 == t.name.table)) )
-                                      .map(t => t.columns).get // или выбрать в базе
-                                      
-          val onUpdate = ForeignKeyAction.NoAction
-          val onDelete = f._2(0)._2 match {
-            case "CASCADE " => ForeignKeyAction.Cascade
-            case "SET NULL" => ForeignKeyAction.SetNull
-            case _ => ForeignKeyAction.NoAction
-          }
-          
-          foreignKeys += ForeignKey(Some(f._1), referencingTable, referencingColumns, referencedTable, referencedColumns, onUpdate, onDelete)  
+      while(!qualifiedNames.isEmpty) {         
+        for(qualifiedName <- qualifiedNames) {
                   
+          val columns = ModelBuildSteps.buildColumns(qualifiedName)
+            
+          val primaryKey = ModelBuildSteps.buildPrimaryKey(qualifiedName, columns)          
+            
+          intermediateResultTables :+=  Table(qualifiedName, columns, primaryKey, Seq.empty, Seq.empty)
         }
         
-        table.copy(foreignKeys = foreignKeys) 
-        
-      }
-      
-      
-      
-    }
-    
-    
-    
-    Model(tables)
+       qualifiedNames = immutable.Seq.empty[QualifiedName] 
+       intermediateResultTables = intermediateResultTables map {table =>
+         val (foreignKeys, referencedQualifiedNames) =ModelBuildSteps.buildForeignKeys(resultTables ++ intermediateResultTables, table)
+         qualifiedNames ++:= referencedQualifiedNames
+         table.copy(foreignKeys = foreignKeys) 
+       }
+       resultTables ++:= intermediateResultTables
+       intermediateResultTables = Seq()
+     }
+                  
+    }       
+    println(resultTables)
+    val setClean = resultTables.toSet
+    Model(setClean.toSeq)
   }
   
 }
@@ -241,11 +135,9 @@ case class DB(jdbcUrl: String, userName: String, pass: String) {
   
 }
 
-
-
 object Main extends App {
   val outputDir = "slick" // place generated files in sbt's managed sources folder   
-  val jdbcUrl = "jdbc:oracle:thin:@//msk-test-01:1521/prod"
+  val jdbcUrl = "jdbc:oracle:thin:@//msk-dev-02:1521/prod"
   //val jdbcUrl = "jdbc:oracle:thin:@//db5.poidem.ru:1521/prod"
   val jdbcDriver = "oracle.jdbc.OracleDriver"
   val slickDriver = "slick.jdbc.OracleProfile"
@@ -258,7 +150,7 @@ object Main extends App {
   
   //run(slickDriver, jdbcDriver, url, outputDir, pkg, schema)
   //run(slickDriver, jdbcDriver, url, outputDir, pkg, Option(name), Option(pass))
-  val model = OracleModel.buildModel(jdbcUrl, userName, pass, Seq("OAS"), Seq("ACCOUNT_LIMIT_PC"))
-      
+  val model = OracleModel.buildModel(jdbcUrl, userName, pass, Seq("TEST_DEV"), Seq.empty)
+    
   new SourceCodeGenerator(model).writeToFile(slickDriver, outputDir, pkg)
 }
