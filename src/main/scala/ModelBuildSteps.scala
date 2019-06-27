@@ -71,7 +71,7 @@ object ModelBuildSteps {
   def buildColumns(qualifiedName: QualifiedName)(implicit connection: Connection): Seq[Column] = SQL("""
       select column_name, data_type, data_length, nullable 
         from all_tab_columns 
-          where owner = {owner} and table_name = {tableName}""")
+          where owner = {owner} and table_name = {tableName} order by column_id""")
     .on("owner" -> qualifiedName.schema, "tableName" -> qualifiedName.table).as(columnsParser)        
     .map { column =>          
       slick.model.Column(column._1, qualifiedName, tpe(column._2, column._3), column._4 == "Y") 
