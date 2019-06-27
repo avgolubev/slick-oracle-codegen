@@ -20,51 +20,6 @@ trait JdbcProfileCust extends JdbcProfile {
      }
 }
 
-object NewSourceCodeGenerator {
-
-  def run(slickDriver: String, jdbcDriver: String, url: String, outputDir: String, pkg: String, schema:String): Unit = {
-
-    val driver: JdbcProfile =
-      Class.forName(slickDriver + "$").getField("MODULE$").get(null).asInstanceOf[JdbcProfile]
-    val dbFactory = driver.api.Database
-
-    val db = dbFactory.forURL(url, driver = jdbcDriver, keepAliveConnection = true)
-
-    try {
-      val allSchemas = Await.result(db.run(
-        driver.createModel(None, ignoreInvalidDefaults = false)(ExecutionContext.global).withPinnedSession), Duration.Inf)
-      println( allSchemas)  
-      val publicSchema = new Model(allSchemas.tables.filter(x=> x.name.schema.contains(schema)), allSchemas.options)
-      
-      new SourceCodeGenerator(publicSchema).writeToFile(slickDriver, outputDir, pkg)
-    } finally db.close
-  }
-  
-  def run(profile: String, jdbcDriver: String, url: String, outputDir: String, pkg: String, user: Option[String], password: Option[String]): Unit = {
-    val profileInstance: JdbcProfile = Class.forName(profile + "$").getField("MODULE$").get(null).asInstanceOf[JdbcProfile]
-    val dbFactory = profileInstance.api.Database
-    val db = dbFactory.forURL(url, driver = jdbcDriver, user = user.getOrElse(null), password = password.getOrElse(null), keepAliveConnection = true)
-    profileInstance.defaultTables
-    try {
-      val filteredTables = profileInstance.defaultTables.map(_.filter(t => t.name.name.contains("Z")))
-      val modelAction = profileInstance.createModel(Option(filteredTables), true)
-      //val fModel = db.run(profileInstance.createModel(None, true)(ExecutionContext.global).withPinnedSession)
-      val fModel = db.run(modelAction)
-      //.map(m => new Model(m.tables.filter(t => t.name.table == "MY_TEST"), m.options))
-      val fRes = fModel.map { x => 
-        new SourceCodeGenerator(x).writeToFile(profile,outputDir, pkg)
-      }
-      Await.result(fRes, Duration.Inf)
- /*     
-      val m = Await.result(fModel, Duration.Inf)            
-      val generatorInstance = new SourceCodeGenerator(m)
-      generatorInstance.writeToFile(profile,outputDir, pkg)
-*/      
-    } finally db.close
-  }  
-  
-}
-
 object OracleModel {
   
   import slick.model.{QualifiedName, Model, Table, PrimaryKey, ForeignKey, ForeignKeyAction}
@@ -146,10 +101,6 @@ object Main extends App {
   val userName = "test_dev"  
   val pass = "test_dev"
   
-  import NewSourceCodeGenerator._
-  
-  //run(slickDriver, jdbcDriver, url, outputDir, pkg, schema)
-  //run(slickDriver, jdbcDriver, url, outputDir, pkg, Option(name), Option(pass))
   val model = OracleModel.buildModel(jdbcUrl, userName, pass, Seq("TEST_DEV"), Seq.empty)
     
   new SourceCodeGenerator(model).writeToFile(slickDriver, outputDir, pkg)
