@@ -13,39 +13,12 @@ object ModelBuildSteps {
   val qualifiedNameParser = str("owner") ~ str("table_name") map { case owner ~ table_name => QualifiedName(table_name, Option(owner)) } *
   val columnsParser = str("column_name") ~ str("data_type") ~ int("data_length") ~ str("nullable") ~ get[Option[String]]("constraint_name") map ( flatten ) *
   val primaryKeyParser = str("constraint_name") ~ str("column_name") map ( flatten ) *
-  val parser4 = str("constraint_name") ~ str(".delete_rule") ~ str("column_name") map ( flatten ) *
-  val parser5 = str("r_owner") ~ str("table_name") ~ str("constraint_name") ~ str("column_name") map ( flatten ) *  
+  val parser4 = str("constraint_name") ~ str(".delete_rule") ~ str("column_name") map ( flatten ) * 
   val parser6 = str("r_owner") ~ str("table_name") ~ str("constraint_name") ~ str("column_name") map { 
     case r_owner ~ table_name ~ constraint_name ~ column_name => 
       (QualifiedName(table_name, Option(r_owner)) -> column_name) 
   } *
-  
-  //QualifiedName(schemaTableName._2, Some(schemaTableName._1))
-  
-  def buildSchemaTableNames2(schemaNames: Seq[String], tableNames: Seq[String])(implicit connection: Connection) = (schemaNames, tableNames) match {
-    case (Seq(), Seq()) =>
-      SQL(""" SELECT owner, table_name FROM all_tables """).as(qualifiedNameParser)
       
-    case (Seq(), _) =>
-      SQL("""
-          SELECT owner, table_name FROM all_tables 
-            where table_name in ({tableNames})
-      """).on("tableNames" -> tableNames).as(qualifiedNameParser)
-      
-    case (_, Seq()) =>
-      SQL("""
-          SELECT owner, table_name FROM all_tables 
-            where owner in ({owners})
-      """).on("owners" -> schemaNames).as(qualifiedNameParser)
-      
-    case (_, _) =>
-      SQL("""
-          SELECT owner, table_name FROM all_tables 
-            where owner in ({owners}) and table_name in ({tableNames})
-      """).on("owners" -> schemaNames, "tableNames" -> tableNames).as(qualifiedNameParser)          
-  }
-  
-  
   def buildSchemaTableNames(schemaNames: Seq[String], tableNames: Seq[String])(implicit connection: Connection) = SQL { 
       (schemaNames, tableNames) match {
         case (Seq(), Seq()) =>
@@ -62,7 +35,7 @@ object ModelBuildSteps {
     }  
   }.on("owners" -> schemaNames, "tableNames" -> tableNames).as(qualifiedNameParser).toSeq
 
-  def tpe(dataType: String, dataLength: Int) = dataType match {
+  private def tpe(dataType: String, dataLength: Int) = dataType match {
     case "CHAR" | "VARCHAR" | "VARCHAR2" if dataLength == 1 => "Char"
     case "CHAR" | "VARCHAR" | "VARCHAR2" => "String"
     case "NUMBER" | "INTEGER" => "scala.math.BigDecimal"
@@ -70,11 +43,11 @@ object ModelBuildSteps {
     case _ => "Any"  
   }  
   
-  def varying(dataType: String): Boolean = {
+  private def varying(dataType: String): Boolean = {
       Seq("NVARCHAR", "VARCHAR", "VARCHAR2", "LONGVARCHAR", "LONGNVARCHAR") contains dataType
   }
   
-  def length(tpe: String, size: Int): Option[Int] = if(tpe == "String") Some(size.toInt) else None
+  private def length(tpe: String, size: Int): Option[Int] = if(tpe == "String") Some(size.toInt) else None
   
   def buildColumns(qualifiedName: QualifiedName)(implicit connection: Connection): (Seq[Column], Option[PrimaryKey]) = {     
     val columnsProperties = 
@@ -148,10 +121,10 @@ object ModelBuildSteps {
           (referencedTableConstraintColumns(0)._1, referencedPrimaryKeyColumns)
           
         }(t => (t.name, t.columns))
-                                                                   
+        
       val onUpdate = ForeignKeyAction.NoAction
       val onDelete = f._2(0)._2 match {
-        case "CASCADE " => ForeignKeyAction.Cascade
+        case "CASCADE" => ForeignKeyAction.Cascade
         case "SET NULL" => ForeignKeyAction.SetNull
         case _ => ForeignKeyAction.NoAction
       }
@@ -161,7 +134,5 @@ object ModelBuildSteps {
     }
     (collection.immutable.Seq(foreignKeys.toSeq: _*), collection.immutable.Seq(referencedQualifiedNames.toSeq: _*))    
   }
-  
-  
-  
+      
 }
