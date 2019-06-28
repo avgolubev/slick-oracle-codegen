@@ -8,7 +8,6 @@ import slick.jdbc.meta.MTable
 
 import scala.concurrent.{Await, ExecutionContext}
 import scala.concurrent.duration.Duration
-//import oracle.jdbc.OracleDriver
 
 
 
@@ -43,10 +42,8 @@ object OracleModel {
       while(!qualifiedNames.isEmpty) {         
         for(qualifiedName <- qualifiedNames) {
                   
-          val columns = ModelBuildSteps.buildColumns(qualifiedName)
-            
-          val primaryKey = ModelBuildSteps.buildPrimaryKey(qualifiedName, columns)          
-            
+          val (columns, primaryKey) = ModelBuildSteps.buildColumns(qualifiedName)
+                                      
           intermediateResultTables :+=  Table(qualifiedName, columns, primaryKey, Seq.empty, Seq.empty)
         }
         
@@ -61,7 +58,6 @@ object OracleModel {
      }
                   
     }       
-    println(resultTables)
     val setClean = resultTables.toSet
     Model(setClean.toSeq)
   }
@@ -101,7 +97,7 @@ object Main extends App {
   val userName = "test_dev"  
   val pass = "test_dev"
   
-  val model = OracleModel.buildModel(jdbcUrl, userName, pass, Seq("TEST_DEV"), Seq.empty)
+  val model = OracleModel.buildModel(jdbcUrl, userName, pass, Seq("TEST_DEV"), Seq("GOLUBEV_TEST2"))
     
   new SourceCodeGenerator(model).writeToFile(slickDriver, outputDir, pkg)
 }
