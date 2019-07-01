@@ -1,6 +1,6 @@
 
 import java.sql.Connection
-import scala.collection.mutable
+//import scala.collection.mutable
 import anorm.{SQL, ~}
 import anorm.SqlParser._
 import slick.model.{Column, PrimaryKey, QualifiedName, ForeignKey, Table, ForeignKeyAction}
@@ -24,14 +24,11 @@ object ModelBuildSteps {
   def buildSchemaTableNames(schemaNames: Seq[String], tableNames: Seq[String])(implicit connection: Connection): Seq[QualifiedName]  = SQL { 
       (schemaNames, tableNames) match {
         case (Seq(), Seq()) =>
-          """ SELECT owner, table_name FROM all_tables """
-          
+          """ SELECT owner, table_name FROM all_tables """          
         case (Seq(), _) =>
-          """ SELECT owner, table_name FROM all_tables where table_name in ({tableNames}) """
-          
+          """ SELECT owner, table_name FROM all_tables where table_name in ({tableNames}) """          
         case (_, Seq()) =>
-          """ SELECT owner, table_name FROM all_tables where owner in ({owners}) """
-          
+          """ SELECT owner, table_name FROM all_tables where owner in ({owners}) """          
         case (_, _) =>
           """ SELECT owner, table_name FROM all_tables where owner in ({owners}) and table_name in ({tableNames}) """          
     }  
@@ -84,10 +81,8 @@ object ModelBuildSteps {
       Some( PrimaryKey(Some(columnsPerKey(0)._2.get), qualifiedName, columnsPerKey.map(_._1)) )          
   }
   
-  def buildForeignKeys(allTables: Seq[Table], currentTable: Table)(implicit connection: Connection): (Seq[ForeignKey], Seq[QualifiedName]) = {
-    
-    val foreignKeys = mutable.Buffer.empty[ForeignKey]
-    
+  def buildForeignKeys(allTables: Seq[Table], currentTable: Table)(implicit connection: Connection) = {
+          
     val foreignMap = SQL("""
         select c1.constraint_name, c1.delete_rule, c2.column_name
           from  all_constraints c1 
@@ -99,10 +94,12 @@ object ModelBuildSteps {
           order by c1.constraint_name
     """).on("owner" -> currentTable.name.schema, "tableName" -> currentTable.name.table).as(parser4).groupBy(_._1)        
     
-    val referencedQualifiedNames =  mutable.Set.empty[QualifiedName]
+    //var foreignKeys = Seq.empty[ForeignKey]
+    var referencedQualifiedNames =  Set.empty[QualifiedName]
     
-    for(f <- foreignMap) {
-      
+    val foreignKeys = for {
+      f <- foreignMap 
+          
       val referencedTableConstraintColumns = SQL("""          
         select c1.r_owner, c2.table_name, c2.constraint_name, c2.column_name
         from  all_constraints c1 
@@ -111,30 +108,32 @@ object ModelBuildSteps {
         where c1.owner = {owner} and c1.constraint_name = {constraintName}  
       """).on("owner" -> currentTable.name.schema, "constraintName" -> f._1).as(parser6)      
                                          
-      val referencingTable = currentTable.name
-      val referencingColumns = currentTable.columns.filter(c => f._2.exists(_._3 == c.name))
+      referencingTable = currentTable.name
+      referencingColumns = currentTable.columns.filter(c => f._2.exists(_._3 == c.name))
                                 
-      val (referencedTable, referencedColumns) =   
+      (referencedTable, referencedColumns, newTable) =   
         allTables.find {t =>
           referencedTableConstraintColumns.exists {_._1 == t.name} 
         }.fold {
           val referencedPrimaryKeyColumns = buildColumns(referencedTableConstraintColumns(0)._1)._1.filter(c => referencedTableConstraintColumns.exists(p => p._2 == c.name))
-          referencedQualifiedNames += referencedTableConstraintColumns(0)._1
-          (referencedTableConstraintColumns(0)._1, referencedPrimaryKeyColumns)
+          (referencedTableConstraintColumns(0)._1, referencedPrimaryKeyColumns, true)
           
-        }(t => (t.name, t.columns))
-              
-      val onUpdate = ForeignKeyAction.Cascade  
-      val onDelete = f._2(0)._2 match {
+        }(t => (t.name, t.columns, false))
+                              
+      onUpdate = ForeignKeyAction.Cascade  
+      onDelete = f._2(0)._2 match {
         case "CASCADE" => ForeignKeyAction.Cascade
         case "SET NULL" => ForeignKeyAction.SetNull
         case _ => ForeignKeyAction.Restrict
       }
-        
-      foreignKeys += ForeignKey(Some(f._1), referencingTable, referencingColumns, referencedTable, referencedColumns, onUpdate, onDelete)  
+                
               
+    } yield {
+      if(newTable) referencedQualifiedNames += referencedTable
+      ForeignKey(Some(f._1), referencingTable, referencingColumns, referencedTable, referencedColumns, onUpdate, onDelete)
     }
-    (Seq(foreignKeys.toSeq: _*), Seq(referencedQualifiedNames.toSeq: _*))    
+    
+    (foreignKeys.toSeq, referencedQualifiedNames)    
   }
       
 }

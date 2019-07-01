@@ -42,8 +42,8 @@ object OracleModel {
          qualifiedNames ++:= referencedQualifiedNames
          table.copy(foreignKeys = foreignKeys) 
        }
-       //i += 1
-       //println(i)
+       i += 1
+       println(i)
      }
                   
     }       
