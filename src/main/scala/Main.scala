@@ -9,52 +9,38 @@ import slick.jdbc.meta.MTable
 import scala.concurrent.{Await, ExecutionContext}
 import scala.concurrent.duration.Duration
 
-
-
-trait JdbcProfileCust extends JdbcProfile {
-     override def defaultTables(implicit ec: ExecutionContext): DBIO[Seq[MTable]] = {
-       println("1111111111")
-       
-       MTable.getTables//("%")
-     }
-}
-
 object OracleModel {
   
   import slick.model.{QualifiedName, Model, Table, PrimaryKey, ForeignKey, ForeignKeyAction}
   
   import anorm._
   import anorm.SqlParser._
-  import scala.collection.mutable
-  import scala.collection.immutable
+  //import scala.collection.mutable
+  //import scala.collection.immutable
     
   def buildModel(jdbcUrl: String, userName: String, pass: String, schemaNames: Seq[String], tableNames: Seq[String]): Model = {
     
     val db = DB(jdbcUrl, userName, pass)
         
-    var resultTables = Seq.empty[Table]
-    var intermediateResultTables = Seq.empty[Table]
+    var resultTables = Seq.empty[Table]    
         
     db.withConnection { implicit connection =>
       
       var qualifiedNames = ModelBuildSteps.buildSchemaTableNames(schemaNames, tableNames)  
       
-      while(!qualifiedNames.isEmpty) {         
-        for(qualifiedName <- qualifiedNames) {
-                  
-          val (columns, primaryKey) = ModelBuildSteps.buildColumns(qualifiedName)
-                                      
-          intermediateResultTables :+=  Table(qualifiedName, columns, primaryKey, Seq.empty, Seq.empty)
-        }
+      while(!qualifiedNames.isEmpty) {
         
-       qualifiedNames = immutable.Seq.empty[QualifiedName] 
-       intermediateResultTables = intermediateResultTables map {table =>
+        val intermediateResultTables = for {
+          qualifiedName <- qualifiedNames
+          (columns, primaryKey) = ModelBuildSteps.buildColumns(qualifiedName)
+        } yield Table(qualifiedName, columns, primaryKey, Seq.empty, Seq.empty)
+        
+       qualifiedNames = Seq() 
+       resultTables ++:= intermediateResultTables map {table =>
          val (foreignKeys, referencedQualifiedNames) =ModelBuildSteps.buildForeignKeys(resultTables ++ intermediateResultTables, table)
          qualifiedNames ++:= referencedQualifiedNames
          table.copy(foreignKeys = foreignKeys) 
        }
-       resultTables ++:= intermediateResultTables
-       intermediateResultTables = Seq()
      }
                   
     }       
@@ -90,15 +76,13 @@ object Main extends App {
   // original builder -  slick.codegen.SourceCodeGenerator.main(Array("slick.jdbc.OracleProfile", "oracle.jdbc.OracleDriver", "jdbc:oracle:thin:@msk-dev-02:1521:prod", "sl", "test", "test_dev", "test_dev"))
   val outputDir = "slick" // place generated files in sbt's managed sources folder   
   val jdbcUrl = "jdbc:oracle:thin:@//msk-dev-02:1521/prod"
-  //val jdbcUrl = "jdbc:oracle:thin:@//db5.poidem.ru:1521/prod"
   val jdbcDriver = "oracle.jdbc.OracleDriver"
   val slickDriver = "slick.jdbc.OracleProfile"
   val pkg = "demo"  
-  val schema = "OAS"
   val userName = "test_dev"  
   val pass = "test_dev"
   
-  val model = OracleModel.buildModel(jdbcUrl, userName, pass, Seq("TEST_DEV"), Seq("GOLUBEV_TEST2"))
+  val model = OracleModel.buildModel(jdbcUrl, userName, pass, Seq("OAS"), Seq())
     
   new SourceCodeGenerator(model).writeToFile(slickDriver, outputDir, pkg)
 }

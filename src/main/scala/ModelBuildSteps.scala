@@ -18,8 +18,10 @@ object ModelBuildSteps {
     case r_owner ~ table_name ~ constraint_name ~ column_name => 
       (QualifiedName(table_name, Option(r_owner)) -> column_name) 
   } *
+  
+  val parser444 = str("constraint_name") ~ str(".delete_rule") ~ str("column_name") map ( flatten ) *
       
-  def buildSchemaTableNames(schemaNames: Seq[String], tableNames: Seq[String])(implicit connection: Connection) = SQL { 
+  def buildSchemaTableNames(schemaNames: Seq[String], tableNames: Seq[String])(implicit connection: Connection): Seq[QualifiedName]  = SQL { 
       (schemaNames, tableNames) match {
         case (Seq(), Seq()) =>
           """ SELECT owner, table_name FROM all_tables """
@@ -128,12 +130,11 @@ object ModelBuildSteps {
         case "SET NULL" => ForeignKeyAction.SetNull
         case _ => ForeignKeyAction.Restrict
       }
-  
-      
+        
       foreignKeys += ForeignKey(Some(f._1), referencingTable, referencingColumns, referencedTable, referencedColumns, onUpdate, onDelete)  
               
     }
-    (collection.immutable.Seq(foreignKeys.toSeq: _*), collection.immutable.Seq(referencedQualifiedNames.toSeq: _*))    
+    (Seq(foreignKeys.toSeq: _*), Seq(referencedQualifiedNames.toSeq: _*))    
   }
       
 }
