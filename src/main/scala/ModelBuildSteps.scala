@@ -121,13 +121,14 @@ object ModelBuildSteps {
           (referencedTableConstraintColumns(0)._1, referencedPrimaryKeyColumns)
           
         }(t => (t.name, t.columns))
-        
-      val onUpdate = ForeignKeyAction.NoAction
+              
+      val onUpdate = ForeignKeyAction.Cascade  
       val onDelete = f._2(0)._2 match {
         case "CASCADE" => ForeignKeyAction.Cascade
         case "SET NULL" => ForeignKeyAction.SetNull
-        case _ => ForeignKeyAction.NoAction
+        case _ => ForeignKeyAction.Restrict
       }
+  
       
       foreignKeys += ForeignKey(Some(f._1), referencingTable, referencingColumns, referencedTable, referencedColumns, onUpdate, onDelete)  
               

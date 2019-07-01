@@ -87,6 +87,7 @@ case class DB(jdbcUrl: String, userName: String, pass: String) {
 }
 
 object Main extends App {
+  // original builder -  slick.codegen.SourceCodeGenerator.main(Array("slick.jdbc.OracleProfile", "oracle.jdbc.OracleDriver", "jdbc:oracle:thin:@msk-dev-02:1521:prod", "sl", "test", "test_dev", "test_dev"))
   val outputDir = "slick" // place generated files in sbt's managed sources folder   
   val jdbcUrl = "jdbc:oracle:thin:@//msk-dev-02:1521/prod"
   //val jdbcUrl = "jdbc:oracle:thin:@//db5.poidem.ru:1521/prod"
