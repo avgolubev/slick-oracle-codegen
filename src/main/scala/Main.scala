@@ -16,31 +16,34 @@ object OracleModel {
   import anorm._
   import anorm.SqlParser._
   //import scala.collection.mutable
-  //import scala.collection.immutable
     
   def buildModel(jdbcUrl: String, userName: String, pass: String, schemaNames: Seq[String], tableNames: Seq[String]): Model = {
     
     val db = DB(jdbcUrl, userName, pass)
         
-    var resultTables = Seq.empty[Table]    
+    var resultTables = Seq.empty[Table]
         
     db.withConnection { implicit connection =>
       
       var qualifiedNames = ModelBuildSteps.buildSchemaTableNames(schemaNames, tableNames)  
       
+      var i = 0;
       while(!qualifiedNames.isEmpty) {
         
         val intermediateResultTables = for {
           qualifiedName <- qualifiedNames
           (columns, primaryKey) = ModelBuildSteps.buildColumns(qualifiedName)
         } yield Table(qualifiedName, columns, primaryKey, Seq.empty, Seq.empty)
-        
-       qualifiedNames = Seq() 
+  
+      qualifiedNames = Seq() 
+      val summaryTables = resultTables ++ intermediateResultTables;
        resultTables ++:= intermediateResultTables map {table =>
-         val (foreignKeys, referencedQualifiedNames) =ModelBuildSteps.buildForeignKeys(resultTables ++ intermediateResultTables, table)
+         val (foreignKeys, referencedQualifiedNames) =ModelBuildSteps.buildForeignKeys(summaryTables, table)
          qualifiedNames ++:= referencedQualifiedNames
          table.copy(foreignKeys = foreignKeys) 
        }
+       //i += 1
+       //println(i)
      }
                   
     }       
