@@ -13,7 +13,7 @@ object ModelBuildSteps {
   val qualifiedNameParser = str("owner") ~ str("table_name") map { case owner ~ table_name => QualifiedName(table_name, Option(owner)) } *
   val columnsParser = str("column_name") ~ str("data_type") ~ int("data_length") ~ str("nullable") ~ get[Option[String]]("constraint_name") map ( flatten ) *
   val primaryKeyParser = str("constraint_name") ~ str("column_name") map ( flatten ) *
-  val parser4 = str("constraint_name") ~ str(".delete_rule") ~ str("column_name") map ( flatten ) * 
+  val parser4 = str("constraint_name") ~ str("column_name") ~ str(".delete_rule") map ( flatten ) * 
   
   val parser444 = str("constraint_name") ~ str(".delete_rule") ~ str("column_name") map ( flatten ) *
       
@@ -80,7 +80,7 @@ object ModelBuildSteps {
   def buildForeignKeys(allTables: Seq[Table], currentTable: Table)(implicit connection: Connection) = {
           
     val foreignMap = SQL("""
-        select c1.constraint_name, c1.delete_rule, c2.column_name
+        select c1.constraint_name, c2.column_name, c1.delete_rule
           from  all_constraints c1 
             inner join all_cons_columns c2 on c1.constraint_name = c2.constraint_name 
             and c2.owner = c1.owner 
@@ -88,16 +88,17 @@ object ModelBuildSteps {
             and c2.constraint_name = c1.constraint_name
           where c1.constraint_type = 'R' and c1.owner = {owner} and c1.table_name = {tableName}
           order by c1.constraint_name
-    """).on("owner" -> currentTable.name.schema, "tableName" -> currentTable.name.table).as(parser4).groupBy(_._1)        
+    """).on("owner" -> currentTable.name.schema, "tableName" -> currentTable.name.table).as(parser4).groupBy(_._1)
+    .map(constrant => constrant._1 -> constrant._2.map(record => (record._2, record._3)))        
     
     var referencedQualifiedNames =  Set.empty[QualifiedName]
     
     val foreignKeys = for {
-      f <- foreignMap 
+      (constraintName, deleteRulesColumnNames) <- foreignMap 
           
-      val referencedTableConstraintColumns = getReferencedColumns(currentTable.name.schema, f._1)      
+      val referencedTableConstraintColumns = getReferencedColumns(currentTable.name.schema, constraintName)      
                                          
-      referencingColumns = currentTable.columns.filter(c => f._2.exists(_._3 == c.name))
+      referencingColumns = currentTable.columns.filter(c => deleteRulesColumnNames.exists(_._1 == c.name))
                                 
       (referencedTable, referencedColumns, newTable) =   
         allTables.find {t =>
@@ -109,7 +110,7 @@ object ModelBuildSteps {
         }(t => (t.name, t.columns, false))
                               
       onUpdate = ForeignKeyAction.Cascade  
-      onDelete = f._2(0)._2 match {
+      onDelete = deleteRulesColumnNames(0)._2 match {
         case "CASCADE" => ForeignKeyAction.Cascade
         case "SET NULL" => ForeignKeyAction.SetNull
         case _ => ForeignKeyAction.Restrict
@@ -118,7 +119,7 @@ object ModelBuildSteps {
               
     } yield {
       if(newTable) referencedQualifiedNames += referencedTable
-      ForeignKey(Some(f._1), currentTable.name, referencingColumns, referencedTable, referencedColumns, onUpdate, onDelete)
+      ForeignKey(Some(constraintName), currentTable.name, referencingColumns, referencedTable, referencedColumns, onUpdate, onDelete)
     }
     
     (foreignKeys.toSeq, referencedQualifiedNames)    

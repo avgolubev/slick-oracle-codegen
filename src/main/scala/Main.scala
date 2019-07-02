@@ -76,16 +76,16 @@ case class DB(jdbcUrl: String, userName: String, pass: String) {
 }
 
 object Main extends App {
-  // original builder -  slick.codegen.SourceCodeGenerator.main(Array("slick.jdbc.OracleProfile", "oracle.jdbc.OracleDriver", "jdbc:oracle:thin:@msk-dev-02:1521:prod", "sl", "test", "test_dev", "test_dev"))
+  // original builder -  slick.codegen.SourceCodeGenerator.main(Array("slick.jdbc.OracleProfile", "oracle.jdbc.OracleDriver", "jdbc:oracle:thin:@server:1521:prod", "sl", "test", "userName", "pass"))
   val outputDir = "slick" // place generated files in sbt's managed sources folder   
-  val jdbcUrl = "jdbc:oracle:thin:@//msk-dev-02:1521/prod"
+  val jdbcUrl = "jdbc:oracle:thin:@//server:1521/prod"
   val jdbcDriver = "oracle.jdbc.OracleDriver"
   val slickDriver = "slick.jdbc.OracleProfile"
   val pkg = "demo"  
-  val userName = "test_dev"  
-  val pass = "test_dev"
+  val userName = ""  
+  val pass = ""
   
-  val model = OracleModel.buildModel(jdbcUrl, userName, pass, Seq("OAS"), Seq())
+  val model = OracleModel.buildModel(jdbcUrl, userName, pass, Seq(""), Seq())
     
   new SourceCodeGenerator(model).writeToFile(slickDriver, outputDir, pkg)
 }
