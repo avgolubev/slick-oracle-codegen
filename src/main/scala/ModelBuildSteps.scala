@@ -14,10 +14,6 @@ object ModelBuildSteps {
   val columnsParser = str("column_name") ~ str("data_type") ~ int("data_length") ~ str("nullable") ~ get[Option[String]]("constraint_name") map ( flatten ) *
   val primaryKeyParser = str("constraint_name") ~ str("column_name") map ( flatten ) *
   val parser4 = str("constraint_name") ~ str(".delete_rule") ~ str("column_name") map ( flatten ) * 
-  val parser6 = str("r_owner") ~ str("table_name") ~ str("constraint_name") ~ str("column_name") map { 
-    case r_owner ~ table_name ~ constraint_name ~ column_name => 
-      (QualifiedName(table_name, Option(r_owner)) -> column_name) 
-  } *
   
   val parser444 = str("constraint_name") ~ str(".delete_rule") ~ str("column_name") map ( flatten ) *
       
@@ -94,21 +90,13 @@ object ModelBuildSteps {
           order by c1.constraint_name
     """).on("owner" -> currentTable.name.schema, "tableName" -> currentTable.name.table).as(parser4).groupBy(_._1)        
     
-    //var foreignKeys = Seq.empty[ForeignKey]
     var referencedQualifiedNames =  Set.empty[QualifiedName]
     
     val foreignKeys = for {
       f <- foreignMap 
           
-      val referencedTableConstraintColumns = SQL("""          
-        select c1.r_owner, c2.table_name, c2.constraint_name, c2.column_name
-        from  all_constraints c1 
-          inner join all_cons_columns c2 on c2.owner = c1.r_owner 
-          and c2.constraint_name = c1.r_constraint_name
-        where c1.owner = {owner} and c1.constraint_name = {constraintName}  
-      """).on("owner" -> currentTable.name.schema, "constraintName" -> f._1).as(parser6)      
+      val referencedTableConstraintColumns = getReferencedColumns(currentTable.name.schema, f._1)      
                                          
-      referencingTable = currentTable.name
       referencingColumns = currentTable.columns.filter(c => f._2.exists(_._3 == c.name))
                                 
       (referencedTable, referencedColumns, newTable) =   
@@ -130,10 +118,25 @@ object ModelBuildSteps {
               
     } yield {
       if(newTable) referencedQualifiedNames += referencedTable
-      ForeignKey(Some(f._1), referencingTable, referencingColumns, referencedTable, referencedColumns, onUpdate, onDelete)
+      ForeignKey(Some(f._1), currentTable.name, referencingColumns, referencedTable, referencedColumns, onUpdate, onDelete)
     }
     
     (foreignKeys.toSeq, referencedQualifiedNames)    
+  }
+  
+  private def getReferencedColumns(schema: Option[String], constraintName: String)(implicit connection: Connection) = {
+    
+    val parser = str("r_owner") ~ str("table_name") ~ str("constraint_name") ~ str("column_name") map { 
+      case r_owner ~ table_name ~ constraint_name ~ column_name => 
+        (QualifiedName(table_name, Option(r_owner)) -> column_name) } *
+        
+    SQL("""          
+      select c1.r_owner, c2.table_name, c2.constraint_name, c2.column_name
+      from  all_constraints c1 
+        inner join all_cons_columns c2 on c2.owner = c1.r_owner 
+        and c2.constraint_name = c1.r_constraint_name
+      where c1.owner = {owner} and c1.constraint_name = {constraintName}  
+    """).on("owner" -> schema, "constraintName" -> constraintName).as(parser)    
   }
       
 }
