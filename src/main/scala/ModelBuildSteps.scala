@@ -91,26 +91,34 @@ object ModelBuildSteps {
     """).on("owner" -> currentTable.name.schema, "tableName" -> currentTable.name.table).as(parser4).groupBy(_._1)
     .map(constrant => constrant._1 -> constrant._2.map(record => (record._2, record._3)))        
     
-    var referencedQualifiedNames =  Set.empty[QualifiedName]
+    var referencedQualifiedNames =  Seq.empty[QualifiedName]
     
     val foreignKeys = for {
-      (constraintName, deleteRulesColumnNames) <- foreignMap 
+      (constraintName, columnNamesDeleteRules) <- foreignMap 
           
-      val referencedTableConstraintColumns = getReferencedColumns(currentTable.name.schema, constraintName)      
-                                         
-      referencingColumns = currentTable.columns.filter(c => deleteRulesColumnNames.exists(_._1 == c.name))
+      referencedQualifiedNamesColNames = getReferencedColumns(currentTable.name.schema, constraintName)
+      referencingColumns = for {
+        column <- currentTable.columns
+        (foreingColName, _) <- columnNamesDeleteRules
+        if column.name == foreingColName 
+      } yield column
                                 
       (referencedTable, referencedColumns, newTable) =   
         allTables.find {t =>
-          referencedTableConstraintColumns.exists {_._1 == t.name} 
+          referencedQualifiedNamesColNames.exists {_._1 == t.name} 
         }.fold {
-          val referencedPrimaryKeyColumns = buildColumns(referencedTableConstraintColumns(0)._1)._1.filter(c => referencedTableConstraintColumns.exists(p => p._2 == c.name))
-          (referencedTableConstraintColumns(0)._1, referencedPrimaryKeyColumns, true)
           
+          val referencedPrimaryKeyColumns = for {
+            col <- buildColumns(referencedQualifiedNamesColNames(0)._1)._1  
+            (_, referencedColName) <- referencedQualifiedNamesColNames
+            if col.name == referencedColName 
+          } yield col
+                             
+          (referencedQualifiedNamesColNames(0)._1, referencedPrimaryKeyColumns, true)          
         }(t => (t.name, t.columns, false))
                               
       onUpdate = ForeignKeyAction.Cascade  
-      onDelete = deleteRulesColumnNames(0)._2 match {
+      onDelete = columnNamesDeleteRules(0)._2 match {
         case "CASCADE" => ForeignKeyAction.Cascade
         case "SET NULL" => ForeignKeyAction.SetNull
         case _ => ForeignKeyAction.Restrict
@@ -118,7 +126,7 @@ object ModelBuildSteps {
                 
               
     } yield {
-      if(newTable) referencedQualifiedNames += referencedTable
+      if(newTable) referencedQualifiedNames +:= referencedTable
       ForeignKey(Some(constraintName), currentTable.name, referencingColumns, referencedTable, referencedColumns, onUpdate, onDelete)
     }
     

@@ -27,7 +27,6 @@ object OracleModel {
       
       var qualifiedNames = ModelBuildSteps.buildSchemaTableNames(schemaNames, tableNames)  
       
-      var i = 0;
       while(!qualifiedNames.isEmpty) {
         
         val intermediateResultTables = for {
@@ -35,16 +34,16 @@ object OracleModel {
           (columns, primaryKey) = ModelBuildSteps.buildColumns(qualifiedName)
         } yield Table(qualifiedName, columns, primaryKey, Seq.empty, Seq.empty)
   
-      qualifiedNames = Seq() 
-      val summaryTables = resultTables ++ intermediateResultTables;
-       resultTables ++:= intermediateResultTables map {table =>
-         val (foreignKeys, referencedQualifiedNames) =ModelBuildSteps.buildForeignKeys(summaryTables, table)
-         qualifiedNames ++:= referencedQualifiedNames
-         table.copy(foreignKeys = foreignKeys) 
-       }
-       i += 1
-       println(i)
-     }
+        qualifiedNames = Seq() 
+        val summaryTables = resultTables ++ intermediateResultTables;
+        
+        resultTables ++:= intermediateResultTables map {table =>
+          val (foreignKeys, referencedQualifiedNames) = ModelBuildSteps.buildForeignKeys(summaryTables, table)
+          qualifiedNames ++:= referencedQualifiedNames
+          table.copy(foreignKeys = foreignKeys) 
+        }
+        
+      }
                   
     }       
     val setClean = resultTables.toSet
@@ -85,7 +84,7 @@ object Main extends App {
   val userName = ""  
   val pass = ""
   
-  val model = OracleModel.buildModel(jdbcUrl, userName, pass, Seq(""), Seq())
+  val model = OracleModel.buildModel(jdbcUrl, userName, pass, Seq(), Seq())
     
   new SourceCodeGenerator(model).writeToFile(slickDriver, outputDir, pkg)
 }
