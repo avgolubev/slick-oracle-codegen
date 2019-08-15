@@ -1,23 +1,48 @@
 
 import java.sql.Connection
-//import scala.collection.mutable
 import anorm.{SQL, ~}
 import anorm.SqlParser._
 import slick.model.{Column, PrimaryKey, QualifiedName, ForeignKey, Table, ForeignKeyAction}
 import slick.sql.SqlProfile
 import slick.relational.RelationalProfile
 import slick.ast.ColumnOption
+import slick.model.Model
 
-object ModelBuildSteps {
+class ModelBuildSteps(schemaNames: Seq[String], tableNames: Seq[String])(implicit connection: Connection) {
     
-  val qualifiedNameParser = str("owner") ~ str("table_name") map { case owner ~ table_name => QualifiedName(table_name, Option(owner)) } *
-  val columnsParser = str("column_name") ~ str("data_type") ~ int("data_length") ~ str("nullable") ~ get[Option[String]]("constraint_name") map ( flatten ) *
-  val primaryKeyParser = str("constraint_name") ~ str("column_name") map ( flatten ) *
-  val parser4 = str("constraint_name") ~ str("column_name") ~ str(".delete_rule") map ( flatten ) * 
-  
-  val parser444 = str("constraint_name") ~ str(".delete_rule") ~ str("column_name") map ( flatten ) *
+  private val qualifiedNameParser = str("owner") ~ str("table_name") map { case owner ~ table_name => QualifiedName(table_name, Option(owner)) } *
+  private val columnsParser = str("column_name") ~ str("data_type") ~ int("data_length") ~ str("nullable") ~ get[Option[String]]("constraint_name") map ( flatten ) *
+  private val primaryKeyParser = str("constraint_name") ~ str("column_name") map ( flatten ) *
+  private val parser4 = str("constraint_name") ~ str("column_name") ~ str(".delete_rule") map ( flatten ) * 
+    
+  def buildModel: Model  = {
+    var resultTables = Seq.empty[Table]
+                            
+    var qualifiedNames = buildSchemaTableNames(schemaNames, tableNames)  
+    
+    while(!qualifiedNames.isEmpty) {
       
-  def buildSchemaTableNames(schemaNames: Seq[String], tableNames: Seq[String])(implicit connection: Connection): Seq[QualifiedName]  = SQL { 
+      val intermediateResultTables = for {
+        qualifiedName <- qualifiedNames
+        (columns, primaryKey) = buildColumns(qualifiedName)
+      } yield Table(qualifiedName, columns, primaryKey, Seq.empty, Seq.empty)
+
+      qualifiedNames = Seq() 
+      val summaryTables = resultTables ++ intermediateResultTables;
+      
+      resultTables ++:= intermediateResultTables map {table =>
+        val (foreignKeys, referencedQualifiedNames) = buildForeignKeys(summaryTables, table)
+        qualifiedNames ++:= referencedQualifiedNames
+        table.copy(foreignKeys = foreignKeys) 
+      }
+      
+    }
+                           
+    val setClean = resultTables.toSet
+    Model(setClean.toSeq)    
+  }
+  
+  private def buildSchemaTableNames(schemaNames: Seq[String], tableNames: Seq[String]): Seq[QualifiedName]  = SQL { 
       (schemaNames, tableNames) match {
         case (Seq(), Seq()) =>
           """ SELECT owner, table_name FROM all_tables """          
@@ -38,13 +63,11 @@ object ModelBuildSteps {
     case _ => "Any"  
   }  
   
-  private def varying(dataType: String): Boolean = {
-      Seq("NVARCHAR", "VARCHAR", "VARCHAR2", "LONGVARCHAR", "LONGNVARCHAR") contains dataType
-  }
+  private def varying(dataType: String): Boolean = Seq("NVARCHAR", "VARCHAR", "VARCHAR2", "LONGVARCHAR", "LONGNVARCHAR") contains dataType  
   
   private def length(tpe: String, size: Int): Option[Int] = if(tpe == "String") Some(size.toInt) else None
   
-  def buildColumns(qualifiedName: QualifiedName)(implicit connection: Connection): (Seq[Column], Option[PrimaryKey]) = {     
+  private def buildColumns(qualifiedName: QualifiedName): (Seq[Column], Option[PrimaryKey]) = {     
     val columnsProperties = 
       SQL("""
         select a.column_name, a.data_type, a.data_length, a.nullable, c2.constraint_name--, a.data_default
@@ -72,12 +95,12 @@ object ModelBuildSteps {
     
   }
   
-  def buildPrimaryKey(qualifiedName: QualifiedName, columnsPK: Seq[(Column, Option[String])])(implicit connection: Connection) = {                   
+  private def buildPrimaryKey(qualifiedName: QualifiedName, columnsPK: Seq[(Column, Option[String])]) = {                   
       val columnsPerKey = columnsPK.filter(_._2.isDefined)
       Some( PrimaryKey(Some(columnsPerKey(0)._2.get), qualifiedName, columnsPerKey.map(_._1)) )          
   }
   
-  def buildForeignKeys(allTables: Seq[Table], currentTable: Table)(implicit connection: Connection) = {
+  private def buildForeignKeys(allTables: Seq[Table], currentTable: Table) = {
           
     val foreignMap = SQL("""
         select c1.constraint_name, c2.column_name, c1.delete_rule
@@ -133,7 +156,7 @@ object ModelBuildSteps {
     (foreignKeys.toSeq, referencedQualifiedNames)    
   }
   
-  private def getReferencedColumns(schema: Option[String], constraintName: String)(implicit connection: Connection) = {
+  private def getReferencedColumns(schema: Option[String], constraintName: String) = {
     
     val parser = str("r_owner") ~ str("table_name") ~ str("constraint_name") ~ str("column_name") map { 
       case r_owner ~ table_name ~ constraint_name ~ column_name => 
